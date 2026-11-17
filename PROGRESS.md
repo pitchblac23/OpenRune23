@@ -301,8 +301,8 @@ Found the same way `settings.gradle.kts` finds them: any dir with a `build.gradl
 | `events/shooting-stars/pack` | 2 | 440 | 0 | 0 | 2026-08-21 |
 | `generic/generic-items` | 2 | 150 | 2 | 0 | 2026-10-31 |
 | `generic/generic-items/pack` | 2 | 140 | 0 | 0 | 2026-10-31 |
-| `generic/generic-locs` | 44 | 2,362 | 9 | 1 | 2026-11-11 |
-| `generic/generic-locs/pack` | 2 | 73 | 0 | 0 | 2026-11-10 |
+| `generic/generic-locs` | 44 | 2,362 | 9 | 1 | 2026-11-14 |
+| `generic/generic-locs/pack` | 2 | 73 | 0 | 0 | 2026-11-14 |
 | `generic/generic-npcs` | 10 | 1,669 | 3 | 3 | 2026-11-10 |
 | `generic/generic-npcs/pack` | 1 | 6 | 0 | 0 | 2026-11-10 |
 | `generic/killcount` | 1 | 36 | 0 | 0 | 2026-11-04 |
@@ -388,7 +388,7 @@ Found the same way `settings.gradle.kts` finds them: any dir with a `build.gradl
 | `travel/canoe` | 6 | 1,122 | 1 | 2 | 2026-11-09 |
 | `travel/fairy-rings` | 1 | 326 | 0 | 0 | 2026-11-11 |
 | `travel/fairy-rings/pack` | 2 | 128 | 0 | 0 | 2026-11-11 |
-| `travel/map-transports` | 2 | 150 | 1 | 0 | 2026-11-09 |
+| `travel/map-transports` | 2 | 150 | 1 | 0 | 2026-11-14 |
 | `travel/skillcape-teleports` | 1 | 99 | 0 | 0 | 2026-11-11 |
 | `travel/skillcape-teleports/pack` | 2 | 345 | 0 | 0 | 2026-11-11 |
 | `travel/spirit-trees` | 1 | 190 | 0 | 0 | 2026-11-11 |
