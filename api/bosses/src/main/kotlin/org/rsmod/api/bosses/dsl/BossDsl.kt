@@ -1,8 +1,10 @@
 package org.rsmod.api.bosses.dsl
 
+import dev.openrune.types.HitmarkTypeGroup
 import dev.openrune.types.NpcMode
 import org.rsmod.api.bosses.spec.*
 import org.rsmod.api.bosses.validation.SpecValidator
+import org.rsmod.api.config.refs.done.hitmark_groups
 import org.rsmod.api.player.output.CamShakeAxis
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
@@ -27,9 +29,31 @@ class BossSpecBuilder(private val npcTypes: List<String>) {
     private val hitReactions = mutableListOf<HitReaction>()
     private val incomingRules = mutableListOf<IncomingRule>()
     private val timers = mutableListOf<TimerSpec>()
+    private var personalHp: PersonalHpSpec? = null
+    private var ambient = false
 
     fun stats(attackRate: Int = 4) {
         stats = BossStats(attackRate)
+    }
+
+    /**
+     * Runs the spec every tick from the npc's spawn instead of from its AI turn, with no player
+     * target: phases, timers and attacks advance whether or not anyone is near. The npc never
+     * targets or retaliates. Abilities, timers and phase entries run without a current target,
+     * so anything aimed at one must sit inside an `onEach(...)`; validation rejects the rest.
+     */
+    fun ambient() {
+        ambient = true
+    }
+
+    /** See [PersonalHpSpec]. */
+    fun personalHp(
+        maxHitpoints: Int,
+        hpVarbit: String? = null,
+        onDeath: AbilityRef? = null,
+        headbar: String? = null,
+    ) {
+        personalHp = PersonalHpSpec(maxHitpoints, hpVarbit, onDeath?.name, headbar)
     }
 
     fun ability(name: String, block: AbilityBuilder.() -> Unit): AbilityRef {
@@ -52,6 +76,7 @@ class BossSpecBuilder(private val npcTypes: List<String>) {
         nextPhase: String? = null,
         idleAnim: String? = null,
         attackRate: Int? = null,
+        keepFacingLock: Boolean = false,
         block: PhaseBuilder.() -> Unit,
     ): PhaseRef {
         val builder = PhaseBuilder(name).apply(block)
@@ -69,6 +94,7 @@ class BossSpecBuilder(private val npcTypes: List<String>) {
                 selector = builder.selector,
                 forceAbilities = builder.forceAbilities,
                 timers = builder.timers,
+                keepFacingLock = keepFacingLock,
             )
         return PhaseRef(name)
     }
@@ -111,6 +137,8 @@ class BossSpecBuilder(private val npcTypes: List<String>) {
                 incomingRules,
                 abilityAttackDelays,
                 timers,
+                personalHp,
+                ambient,
             )
         val errors = SpecValidator.validate(spec)
         if (errors.isNotEmpty()) {
@@ -139,6 +167,9 @@ class HitBuilder internal constructor() {
     private var penetrationPercent: Int = 0
     private var penetrationWhen: Condition? = null
     private var hazardHit: Boolean = false
+    private var resolveOnImpactFlag: Boolean = false
+    private var reactOnLandingFlag: Boolean = false
+    private var reactFlag: Boolean = true
     private var missSpot: String? = null
     private var missSoundSynth: String? = null
     private var onHitEffect: Effect? = null
@@ -179,6 +210,14 @@ class HitBuilder internal constructor() {
         hazardHit = true
     }
 
+    fun resolveOnImpact() {
+        resolveOnImpactFlag = true
+    }
+
+    fun reactOnLanding() {
+        reactOnLandingFlag = true
+    }
+
     fun missSpotanim(spot: String) {
         missSpot = spot
     }
@@ -195,6 +234,10 @@ class HitBuilder internal constructor() {
 
     fun lifesteal(percent: Int) {
         lifestealPercent = percent
+    }
+
+    fun noReaction() {
+        reactFlag = false
     }
 
     internal fun commitDamage(expr: DamageExpr) {
@@ -222,6 +265,9 @@ class HitBuilder internal constructor() {
             spotanimUnlessPraying = spotanimUnlessPraying,
             penetrationWhen = penetrationWhen,
             hazard = hazardHit,
+            resolveOnImpact = resolveOnImpactFlag,
+            reactOnLanding = reactOnLandingFlag,
+            react = reactFlag,
         )
 }
 
@@ -270,8 +316,14 @@ class AbilityBuilder {
     }
 
     /** Plays [spot] on the caster (the boss npc itself), not on the target. */
-    fun spotanim(spot: String, height: Int = 0, delay: Int = 0, slot: Int = 0) {
-        effects += Effect.Spotanim(spot, height, delay, slot)
+    fun spotanim(
+        spot: String,
+        height: Int = 0,
+        delay: Int = 0,
+        slot: Int = 0,
+        target: TargetExpr? = null,
+    ) {
+        effects += Effect.Spotanim(spot, height, delay, slot, target)
     }
 
     fun say(text: String) {
@@ -384,6 +436,14 @@ class AbilityBuilder {
 
     fun poison(damage: Int, odds: Odds) {
         effects += Effect.Poison(damage, odds.chance, odds.outOf)
+    }
+
+    fun venom(chance: Int = 1, outOf: Int = 1) {
+        effects += Effect.Venom(chance, outOf)
+    }
+
+    fun venom(odds: Odds) {
+        effects += Effect.Venom(odds.chance, odds.outOf)
     }
 
     fun freeze(ticks: Int, chance: Int = 1, outOf: Int = 1) {
@@ -525,6 +585,29 @@ class AbilityBuilder {
         type: HitType,
     ) {
         effects += Effect.TileAoE(tiles, telegraph, damage, type)
+    }
+
+    fun bleed(
+        duration: Int,
+        movingDamage: DamageExpr,
+        applyDamage: DamageExpr? = null,
+        stillDamage: DamageExpr? = null,
+        stillInterval: Int = 0,
+        hitmark: HitmarkTypeGroup = hitmark_groups.regular_damage,
+        onApply: Effect? = null,
+        onMovingHit: Effect? = null,
+    ) {
+        effects +=
+            Effect.Bleed(
+                duration,
+                movingDamage,
+                applyDamage,
+                stillDamage,
+                stillInterval,
+                hitmark,
+                onApply,
+                onMovingHit,
+            )
     }
 
     fun summon(

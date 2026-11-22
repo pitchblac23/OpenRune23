@@ -8,9 +8,11 @@ import kotlin.math.abs
 import kotlin.random.Random
 import org.rsmod.annotations.InternalApi
 import org.rsmod.api.bosses.spec.*
+import org.rsmod.api.random.GameRandom
 import org.rsmod.game.MapClock
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
+import org.rsmod.game.headbar.Headbar
 import org.rsmod.map.CoordGrid
 
 class BossEncounter(
@@ -28,6 +30,24 @@ class BossEncounter(
     var damageScale: Double = 1.0
     var lethalHandled: Boolean = false
 
+    val personalHp: PersonalHpTracker? =
+        spec.personalHp?.let { personal ->
+            PersonalHpTracker(personal, showHeadbar = { player, hitpoints ->
+                showPersonalHeadbar(personal, player, hitpoints)
+            })
+        }
+
+    private fun showPersonalHeadbar(personal: PersonalHpSpec, player: Player, hitpoints: Int) {
+        val name = personal.headbar ?: return
+        val bar = ServerCacheManager.getHealthBar(name.asRSCM(RSCMType.HEADBAR)) ?: return
+        val fill = if (hitpoints <= 0) 0 else (hitpoints * bar.segments).ceilDiv(personal.maxHitpoints)
+        npc.showHeadbar(
+            Headbar.fromPlayerSource(bar.id, null, fill, fill, 0, 0, player.slotId)
+        )
+    }
+
+    private fun Int.ceilDiv(other: Int): Int = (this + other - 1) / other
+
     /** Tick until which multi-tick effects are still running; nothing new may start before it. */
     var busyUntil: Int = 0
 
@@ -40,9 +60,17 @@ class BossEncounter(
 
     internal var timersStarted: Boolean = false
 
+    internal var standTickRunning: Boolean = false
+
     private val ownedLocs = mutableMapOf<CoordGrid, OwnedLoc>()
 
     fun ownsLocAt(tile: CoordGrid): Boolean = tile in ownedLocs
+
+    internal fun ownedLocAt(tile: CoordGrid): OwnedLoc? = ownedLocs[tile]
+
+    internal fun hasStandLocs(): Boolean = ownedLocs.values.any { it.onStand != null }
+
+    internal fun releaseOwnedLocAt(tile: CoordGrid): OwnedLoc? = ownedLocs.remove(tile)
 
     internal fun addOwnedLoc(tile: CoordGrid, loc: OwnedLoc) {
         ownedLocs[tile] = loc
@@ -53,6 +81,12 @@ class BossEncounter(
     internal fun addOwnedNpc(npc: Npc) {
         ownedNpcs += npc
     }
+
+    fun hasOwnedNpc(predicate: (Npc) -> Boolean): Boolean = ownedNpcs.any(predicate)
+
+    fun firstOwnedNpc(predicate: (Npc) -> Boolean): Npc? = ownedNpcs.firstOrNull(predicate)
+
+    fun ownedNpcSnapshot(): List<Npc> = ownedNpcs.toList()
 
     fun releaseOwnedNpcs(): List<Npc> {
         val released = ownedNpcs.toList()
@@ -151,7 +185,7 @@ class BossEncounter(
 
         npc.movementLocked = phase?.lockMovement == true
 
-        npc.clearFacingLock()
+        if (phase?.keepFacingLock != true) npc.clearFacingLock()
     }
 
     fun selectAbility(selector: Selector, tick: Int, target: Player? = null): String? {
@@ -263,8 +297,9 @@ class BossEncounter(
         target: Player? = null,
         tiles: TileScope? = null,
         hit: HitContext? = null,
+        random: GameRandom? = null,
     ): Boolean {
-        fun eval(inner: Condition) = evaluate(inner, target, tiles, hit)
+        fun eval(inner: Condition) = evaluate(inner, target, tiles, hit, random)
         fun requireHit(): HitContext =
             checkNotNull(hit) { "$condition evaluated outside an incoming hit." }
         return when (condition) {
@@ -297,6 +332,10 @@ class BossEncounter(
                 val name = condition.name
                 val scope = checkNotNull(tiles) { "tilesEmpty(\"$name\") evaluated outside an effect." }
                 scope.set(name).isEmpty()
+            }
+            is Condition.Chance -> {
+                val rng = checkNotNull(random) { "$condition evaluated outside a whenever effect." }
+                rng.of(condition.outOf) < condition.chance
             }
             is Condition.Custom -> condition.test(npc, target)
             is Condition.Not -> !eval(condition.c)

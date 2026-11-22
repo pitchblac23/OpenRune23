@@ -1,6 +1,8 @@
 package org.rsmod.api.bosses.spec
 
+import dev.openrune.types.HitmarkTypeGroup
 import dev.openrune.types.NpcMode
+import org.rsmod.api.config.refs.done.hitmark_groups
 import org.rsmod.api.player.output.CamShakeAxis
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
@@ -49,7 +51,13 @@ sealed interface Effect {
         val loops: Int = 1,
         val delay: Int = 0,
     ) : Effect
-    data class Spotanim(val spot: String, val height: Int = 0, val delay: Int = 0, val slot: Int = 0) : Effect
+    data class Spotanim(
+        val spot: String,
+        val height: Int = 0,
+        val delay: Int = 0,
+        val slot: Int = 0,
+        val target: TargetExpr? = null,
+    ) : Effect
     data class MapSpotanim(val spot: String, val at: TargetExpr.Single, val height: Int = 0, val delay: Int = 0) : Effect
     data class Broadcast(val text: String, val radius: Int = 15) : Effect
 
@@ -103,6 +111,19 @@ sealed interface Effect {
         val penetrationWhen: Condition? = null,
         /** Environmental damage (falling rocks etc.): no retaliation and no defend anim. */
         val hazard: Boolean = false,
+        val resolveOnImpact: Boolean = false,
+        val reactOnLanding: Boolean = false,
+        val react: Boolean = true,
+    ) : Effect
+
+    data class HitNpcs(
+        val on: List<TargetExpr.Single>,
+        val damage: DamageExpr,
+        val type: HitType = HitType.Typeless,
+        val delay: Int = 1,
+        val selfDamage: DamageExpr? = null,
+        val includeSelf: Boolean = true,
+        val npcTypes: List<String>? = null,
     ) : Effect
 
     data class Projectile(
@@ -155,6 +176,25 @@ sealed interface Effect {
         val center: TargetExpr.Single = TargetExpr.Self,
     ) : Effect
 
+    data class Bleed(
+        val duration: Int,
+        val movingDamage: DamageExpr,
+        val applyDamage: DamageExpr? = null,
+        val stillDamage: DamageExpr? = null,
+        val stillInterval: Int = 0,
+        val hitmark: HitmarkTypeGroup = hitmark_groups.regular_damage,
+        val onApply: Effect? = null,
+        val onMovingHit: Effect? = null,
+    ) : Effect {
+        init {
+            require(duration > 0) { "Bleed duration must be greater than 0." }
+            require(stillInterval >= 0) { "Bleed stillInterval must not be negative." }
+            require((stillInterval > 0) == (stillDamage != null)) {
+                "Bleed stillDamage and stillInterval must be set together."
+            }
+        }
+    }
+
     data class Summon(
         val npc: String,
         val count: Int = 1,
@@ -201,6 +241,9 @@ sealed interface Effect {
      */
     data class LockMovement(val locked: Boolean) : Effect
 
+    /** Sets [org.rsmod.api.bosses.runtime.BossEncounter.invulnerable]. */
+    data class Invulnerable(val invulnerable: Boolean) : Effect
+
     /** Heals the caster by [amount], capped at its max hp, with a heal hitsplat. */
     data class HealSelf(val amount: Int) : Effect
 
@@ -209,6 +252,9 @@ sealed interface Effect {
     data class FaceTile(val at: TargetExpr.Single) : Effect
 
     data class Poison(val damage: Int, val chance: Int = 1, val outOf: Int = 1) : Effect
+
+    /** Envenoms the current target with probability [chance]/[outOf], unless they are immune. */
+    data class Venom(val chance: Int = 1, val outOf: Int = 1) : Effect
     data class Freeze(val ticks: Int, val chance: Int = 1, val outOf: Int = 1) : Effect
     data class DisablePrayers(val overheadsOnly: Boolean = false) : Effect
     data class StatDrain(val entries: List<StatDrainEntry>) : Effect {
@@ -247,6 +293,9 @@ sealed interface Effect {
 
     data class SetVarn(val varn: String, val value: VarExpr) : Effect
 
+    /** Writes [value] to the current target's [varbit]; needs a target. */
+    data class SetPlayerVar(val varbit: String, val value: VarExpr) : Effect
+
     /** Runs the case matching [varn]'s current value, or [otherwise] if none does. */
     data class Switch(val varn: String, val cases: Map<Int, Effect>, val otherwise: Effect = NoOp) : Effect
 
@@ -277,13 +326,22 @@ sealed interface Effect {
      * Spawns [loc] at [at], owned by the encounter: the tile stops counting as free for
      * [TileSet]s and the loc is removed when the encounter ends. Skipped if the encounter already
      * owns a loc there. [blockPlayersOnly] swaps the loc's collision for a player-only block.
+     * [onStand] runs every tick against each player standing on the loc, from the tick after it
+     * was placed.
      */
     data class SpawnLoc(
         val loc: String,
         val at: TargetExpr.Single,
         val angle: Int = 0,
         val blockPlayersOnly: Boolean = false,
+        val onStand: Effect? = null,
     ) : Effect
+
+    /** Removes the encounter-owned loc at [at], if there is one. */
+    data class RemoveLoc(val at: TargetExpr.Single) : Effect
+
+    /** Plays [anim] on the encounter-owned loc at [at], if there is one. */
+    data class LocAnim(val at: TargetExpr.Single, val anim: String) : Effect
 
     /** Shoves the target one tile to a random free neighbour inside [within], playing [anim]. */
     data class Knockback(val anim: String, val within: Area) : Effect
